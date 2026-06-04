@@ -103,6 +103,38 @@ class GSSession:
         r.raise_for_status()
         return r.text
 
+    def fetch_roster(self, course_id):
+        """Returns list of [Name, SID, Email, Role] rows (header first)."""
+        r = self.session.get(f"{GS_BASE}/courses/{course_id}/memberships.csv")
+        r.raise_for_status()
+        rows = list(csv.reader(io.StringIO(r.text)))
+        if not rows:
+            return []
+        header = [h.strip() for h in rows[0]]
+        def col(*names):
+            for name in names:
+                try:
+                    return header.index(name)
+                except ValueError:
+                    pass
+            return None
+        i_first = col("First Name", "first_name", "first name")
+        i_last  = col("Last Name", "last_name", "last name")
+        i_name  = col("Name", "name")
+        i_sid   = col("SID", "Student ID", "student_id", "ID")
+        i_email = col("Email", "email")
+        i_role  = col("Role", "role")
+        out = [["Name", "SID", "Email", "Role"]]
+        for row in rows[1:]:
+            def get(i):
+                return row[i].strip() if i is not None and i < len(row) else ""
+            if i_name is not None:
+                name = get(i_name)
+            else:
+                name = f"{get(i_first)} {get(i_last)}".strip()
+            out.append([name, get(i_sid), get(i_email), get(i_role)])
+        return out
+
     def fetch_assignments(self, course_id):
         """Returns list of (assignment_id, title) parsed from the assignments page."""
         r = self.session.get(f"{GS_BASE}/courses/{course_id}/assignments")
@@ -193,6 +225,20 @@ def main():
     log.info("Gradescope login ok")
 
     spreadsheet = open_sheets(spreadsheet_id, creds["service_account"])
+
+    log.info("syncing roster...")
+    roster_rows = gs.fetch_roster(course_id)
+    if roster_rows:
+        try:
+            ws = spreadsheet.worksheet("Roster")
+            with_retry(ws.clear)
+        except gspread.WorksheetNotFound:
+            ws = with_retry(spreadsheet.add_worksheet, title="Roster", rows=max(len(roster_rows), 100), cols=4)
+        with_retry(ws.update, range_name="A1", values=roster_rows, value_input_option="RAW")
+        log.info("  roster: %d students", len(roster_rows) - 1)
+    else:
+        log.warning("  roster: empty or inaccessible")
+    time.sleep(args.sleep)
 
     assignments = gs.fetch_assignments(course_id)
     log.info("found %d assignments", len(assignments))
