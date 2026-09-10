@@ -235,6 +235,55 @@ def resolve(path, here, subdir=None):
     return os.path.join(here, path)
 
 
+def sync_course(gs, course, creds, sleep):
+    """Sync one course's roster + every assignment into its spreadsheet."""
+    course_id = course["gradescope_course_id"]
+    log.info("=== %s: course=%s spreadsheet=%s",
+             course["course_code"], course_id, course["spreadsheet_id"])
+    spreadsheet = open_sheets(course["spreadsheet_id"], creds["service_account"])
+
+    log.info("  syncing roster...")
+    roster_rows = gs.fetch_roster(course_id)
+    if roster_rows:
+        try:
+            ws = spreadsheet.worksheet("Roster")
+            with_retry(ws.clear)
+        except gspread.WorksheetNotFound:
+            ws = with_retry(spreadsheet.add_worksheet, title="Roster",
+                            rows=max(len(roster_rows), 100), cols=4)
+        with_retry(ws.update, range_name="A1", values=roster_rows, value_input_option="RAW")
+        log.info("    roster: %d students", len(roster_rows) - 1)
+    else:
+        log.warning("    roster: empty or inaccessible")
+    time.sleep(sleep)
+
+    assignments = gs.fetch_assignments(course_id)
+    log.info("  found %d assignments", len(assignments))
+    for aid, title in assignments:
+        tab = safe_tab_name(title)
+        log.info("    [%s] %s", aid, tab)
+        try:
+            csv_text = gs.download_scores(course_id, aid)
+        except Exception as e:
+            log.error("      download failed: %s", e)
+            continue
+        write_csv_to_tab(spreadsheet, tab, csv_text)
+        time.sleep(sleep)
+
+
+def run_courses(gs, courses, creds, sleep):
+    """Sync every course. One failure never aborts the rest.
+    Returns the list of failed course codes."""
+    failed = []
+    for course in courses:
+        try:
+            sync_course(gs, course, creds, sleep)
+        except Exception as e:
+            log.exception("  %s FAILED: %s", course["course_code"], e)
+            failed.append(course["course_code"])
+    return failed
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=CLASS_JSON_DEFAULT)
@@ -243,50 +292,38 @@ def main():
         "--sleep", type=float, default=1.2,
         help="seconds between Sheets writes (default 1.2; ~50/min)",
     )
+    parser.add_argument("--only", default=None, help="sync only this course_code")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print the courses that would sync, then exit")
     args = parser.parse_args()
 
     here = os.path.dirname(os.path.abspath(__file__))
     cfg = load_json(resolve(args.config, here, subdir="config"))
     creds = load_credentials(resolve(args.credentials, here))
 
-    course_id = str(cfg["GRADESCOPE_COURSE_ID"])
-    spreadsheet_id = cfg["SPREADSHEET_ID"]
-    log.info("course=%s spreadsheet=%s", course_id, spreadsheet_id)
+    courses = normalize_courses(cfg)
+    if args.only:
+        courses = [c for c in courses if c["course_code"] == args.only]
+        if not courses:
+            raise SystemExit(f"no course with course_code={args.only!r} in config")
+
+    log.info("syncing %d course(s): %s",
+             len(courses), ", ".join(c["course_code"] for c in courses))
+    if args.dry_run:
+        for c in courses:
+            log.info("  would sync %s: course=%s spreadsheet=%s",
+                     c["course_code"], c["gradescope_course_id"], c["spreadsheet_id"])
+        return
 
     gs = GSSession()
     gs.log_in(creds["gradescope_email"], creds["gradescope_password"])
     log.info("Gradescope login ok")
 
-    spreadsheet = open_sheets(spreadsheet_id, creds["service_account"])
-
-    log.info("syncing roster...")
-    roster_rows = gs.fetch_roster(course_id)
-    if roster_rows:
-        try:
-            ws = spreadsheet.worksheet("Roster")
-            with_retry(ws.clear)
-        except gspread.WorksheetNotFound:
-            ws = with_retry(spreadsheet.add_worksheet, title="Roster", rows=max(len(roster_rows), 100), cols=4)
-        with_retry(ws.update, range_name="A1", values=roster_rows, value_input_option="RAW")
-        log.info("  roster: %d students", len(roster_rows) - 1)
-    else:
-        log.warning("  roster: empty or inaccessible")
-    time.sleep(args.sleep)
-
-    assignments = gs.fetch_assignments(course_id)
-    log.info("found %d assignments", len(assignments))
-    for aid, title in assignments:
-        tab = safe_tab_name(title)
-        log.info("  [%s] %s", aid, tab)
-        try:
-            csv_text = gs.download_scores(course_id, aid)
-        except Exception as e:
-            log.error("    download failed: %s", e)
-            continue
-        write_csv_to_tab(spreadsheet, tab, csv_text)
-        time.sleep(args.sleep)
-
-    log.info("done")
+    failed = run_courses(gs, courses, creds, args.sleep)
+    if failed:
+        log.error("done with failures: %s", ", ".join(failed))
+        sys.exit(1)
+    log.info("done — %d course(s) synced", len(courses))
 
 
 if __name__ == "__main__":

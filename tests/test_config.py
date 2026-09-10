@@ -38,3 +38,30 @@ def test_missing_spreadsheet_id_raises():
 def test_empty_config_raises():
     with pytest.raises(ValueError):
         normalize_courses({})
+
+
+from simple_sync import run_courses
+
+
+def test_one_course_failing_does_not_stop_the_others(monkeypatch):
+    seen = []
+
+    def fake_sync(gs, course, creds, sleep):
+        seen.append(course["course_code"])
+        if course["course_code"] == "CS10":
+            raise RuntimeError("gradescope exploded")
+
+    import simple_sync
+    monkeypatch.setattr(simple_sync, "sync_course", fake_sync)
+    courses = [{"course_code": c, "gradescope_course_id": "1", "spreadsheet_id": "s"}
+               for c in ("CS61A", "CS10", "CS61C")]
+    failed = run_courses(None, courses, {}, 0)
+    assert seen == ["CS61A", "CS10", "CS61C"]
+    assert failed == ["CS10"]
+
+
+def test_all_courses_succeeding_reports_no_failures(monkeypatch):
+    import simple_sync
+    monkeypatch.setattr(simple_sync, "sync_course", lambda *a, **k: None)
+    courses = [{"course_code": "CS61A", "gradescope_course_id": "1", "spreadsheet_id": "s"}]
+    assert run_courses(None, courses, {}, 0) == []
