@@ -49,15 +49,39 @@ cp config/example.json config/custom_sync.json
 
 ```json
 {
-  "GRADESCOPE_COURSE_ID": "1234567",
-  "SPREADSHEET_ID": "1AbC..."
+  "courses": [
+    {
+      "course_code": "CS61A",
+      "gradescope_course_id": "1234567",
+      "spreadsheet_id": "1AbC..."
+    },
+    {
+      "course_code": "CS10",
+      "gradescope_course_id": "7654321",
+      "spreadsheet_id": "1XyZ..."
+    }
+  ]
 }
 ```
 
-- `GRADESCOPE_COURSE_ID` — last path component of `https://www.gradescope.com/courses/{id}`.
-- `SPREADSHEET_ID` — path component of `https://docs.google.com/spreadsheets/d/{id}/edit`.
+- `course_code` — a label for logs and `--only`. Match the codes in
+  `remind/services/shared/courses.json`, which is the source of truth for the
+  per-course table.
+- `gradescope_course_id` — last path component of `https://www.gradescope.com/courses/{id}`.
+  It must belong to the **term you actually want**; Gradescope reuses course
+  names across terms, so check the term label before pasting an ID.
+- `spreadsheet_id` — path component of `https://docs.google.com/spreadsheets/d/{id}/edit`.
 
-The Gradescope account must have **Instructor or TA** role on the course.
+Courses sync serially in one run. That is deliberate: parallel runs share the
+same service account's 60-writes/min Sheets quota and trigger 429 storms.
+
+A single course failing is logged and skipped so the rest still sync; the run
+then exits non-zero so the failure is still visible.
+
+The older flat shape (`GRADESCOPE_COURSE_ID` + `SPREADSHEET_ID` at the top level)
+is still accepted and is treated as a one-course config.
+
+The Gradescope account must have **Instructor or TA** role on every course.
 
 `config/*.json` is gitignored except `example.json`.
 
@@ -65,10 +89,21 @@ The Gradescope account must have **Instructor or TA** role on the course.
 
 ```bash
 python3 simple_sync.py                              # defaults: config/custom_sync.json, credentials.json
+python3 simple_sync.py --dry-run                    # list the courses that would sync, then exit
+python3 simple_sync.py --only CS61C                 # sync a single course
 python3 simple_sync.py --config my_class.json       # different config
 python3 simple_sync.py --credentials other.json     # different credentials
 python3 simple_sync.py --sleep 0.5                  # faster writes (risk Sheets 429)
 ```
+
+### 6. Tests
+
+```bash
+python3 -m pytest tests/ -v
+```
+
+Covers config normalisation and per-course error isolation. The network paths
+(Gradescope, Sheets) need live credentials — use `--dry-run` and `--only` there.
 
 ---
 

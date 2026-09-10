@@ -1,4 +1,14 @@
 {
-  "GRADESCOPE_COURSE_ID": "1234567",
-  "SPREADSHEET_ID": "1AbC...your-sheet-id..."
+  "courses": [
+    {
+      "course_code": "CS61A",
+      "gradescope_course_id": "1234567",
+      "spreadsheet_id": "1AbC...your-sheet-id..."
+    },
+    {
+      "course_code": "CS10",
+      "gradescope_course_id": "7654321",
+      "spreadsheet_id": "1XyZ...another-sheet-id..."
+    }
+  ]
 }

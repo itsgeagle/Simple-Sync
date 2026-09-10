@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # ── CONFIGURE THESE ──────────────────────────────────────────────────────────
-PROJECT_ID="your-gcp-project-id"   # gcloud projects list
+PROJECT_ID="autoremind-480200"   # gcloud projects list
 REGION="us-central1"
 TIMEZONE="America/Los_Angeles"     # IANA timezone for the 6 AM schedule
 # ─────────────────────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ JOB_ARGS=(
   --memory="512Mi"
   --cpu="1"
   --max-retries=1
-  --task-timeout="30m"
+  --task-timeout="60m"
   --set-secrets="/app/credentials.json=simple-sync-credentials:latest,/app/config/custom_sync.json=simple-sync-config:latest"
   --project="${PROJECT_ID}"
 )
