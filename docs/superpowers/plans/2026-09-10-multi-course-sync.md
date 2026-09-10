@@ -879,3 +879,37 @@ git commit -m "docs: mark multi-course sync plan complete"
 - The old files in `cs61a autoremind pilot data` (`1L7Lq…`) are genuine Summer pilot history — **leave them alone**. Only the four September files are wrong, and they are re-exported into the new `cs61a snapshots` folder, not the old one.
 - If `--only CS61C` fails with a Sheets 403, the sheet was un-shared from `gradesync@`; all three were verified shared on 2026-09-10.
 - Summer sheet `1HPa…` stops updating the moment Task 9 lands. That is intended (spec decision: freeze).
+
+---
+
+## Outcome (2026-09-10)
+
+All ten tasks complete. Two deviations from the plan as written:
+
+1. **`deadline-export` was not a git repository.** It had a correct `.gitignore`
+   but no `.git`. Initialised it locally (no remote) and committed the existing
+   tree before making changes, so this work is tracked.
+
+2. **Both Dockerfiles needed `ENTRYPOINT`.** The first deployed smoke test died
+   with `Application failed to start: ... Application exec likely failed`. With a
+   bare `CMD` and no `ENTRYPOINT`, `gcloud run jobs execute --args` *replaces* the
+   command line rather than appending, so the container tried to exec `--only`
+   as its binary. Changed to `ENTRYPOINT ["python3", "<script>"]` + `CMD []` in
+   both repos. `--only` / `--dry-run` / `--date` overrides now work.
+
+### Verified end state
+
+| Check | Result |
+|---|---|
+| `simple-sync` full run | `done — 3 course(s) synced`, exit 0, ~4 min |
+| CS61A sheet | 9 tabs (8 assignments + Roster), roster **1621** — Fall, not Summer's 198 |
+| CS10 sheet | 107 tabs (101 assignments + Roster + pre-existing manual tabs), roster 186 |
+| CS61C sheet | 5 tabs (4 assignments + Roster), roster 566 |
+| `gradesync-daily-job` | deleted, along with the `gradesync-daily` scheduler |
+| Remaining jobs | `simple-sync` 06:00, `deadline-export` 00:05, `autoremind-daily-job` 09:00 |
+| Repaired snapshots | all four now 1621 Fall students (were 198 Summer) |
+
+CS10's tab count exceeds assignments + Roster because the sheet carries manual
+tabs (`Labs`, `Discussions`, `Pyturis`, …) listed as `non_assignment_tabs` in
+`courses.json`. The sync adds and overwrites assignment tabs but never deletes,
+so those are left untouched by design.
