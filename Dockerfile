@@ -7,4 +7,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY simple_sync.py .
 
 # credentials.json and config/custom_sync.json are mounted from Secret Manager at runtime
-CMD ["python3", "simple_sync.py"]
+ENTRYPOINT ["python3", "simple_sync.py"]
+CMD []
