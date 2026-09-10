@@ -68,6 +68,39 @@ def load_credentials(path):
     return data
 
 
+def normalize_courses(cfg):
+    """Return a list of course dicts from either the `courses` array shape or
+    the legacy flat single-course shape."""
+    raw = cfg.get("courses")
+    if raw is None:
+        if "GRADESCOPE_COURSE_ID" in cfg and "SPREADSHEET_ID" in cfg:
+            raw = [{
+                "course_code": cfg.get("COURSE_CODE") or "default",
+                "gradescope_course_id": cfg["GRADESCOPE_COURSE_ID"],
+                "spreadsheet_id": cfg["SPREADSHEET_ID"],
+            }]
+        else:
+            raise ValueError(
+                "config has neither a 'courses' array nor "
+                "GRADESCOPE_COURSE_ID/SPREADSHEET_ID"
+            )
+    if not raw:
+        raise ValueError("config 'courses' is empty")
+
+    out = []
+    for i, c in enumerate(raw):
+        code = str(c.get("course_code") or f"course[{i}]")
+        for key in ("gradescope_course_id", "spreadsheet_id"):
+            if not c.get(key):
+                raise ValueError(f"course {code}: missing '{key}'")
+        out.append({
+            "course_code": code,
+            "gradescope_course_id": str(c["gradescope_course_id"]),
+            "spreadsheet_id": str(c["spreadsheet_id"]),
+        })
+    return out
+
+
 class GSSession:
     """Minimal Gradescope client: logged-in requests.Session + helpers."""
 
